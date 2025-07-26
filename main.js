@@ -144,7 +144,7 @@ function createPot() {
   const loader = new GLTFLoader();
 
   loader.load(
-    "/models/pot.glb", // Path to your GLB file
+    "/happy-birthday/models/pot.glb", // Path to your GLB file
 
     // onLoad callback
     (gltf) => {
