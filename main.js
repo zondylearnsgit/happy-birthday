@@ -137,18 +137,72 @@ function createFlower() {
 
 // Removed setupMaterial function as it's now handled inline
 
+/**
+ * Loads the pot.glb model, which uses a Physical material, and adds it to the scene.
+ * This function relies on the renderer and lighting being correctly set up for PBR.
+ */
 function createPot() {
+  const loader = new GLTFLoader();
+
+  loader.load(
+    "/models/pot.glb", // Path to your GLB file
+
+    // onLoad callback
+    (gltf) => {
+      console.log("Pot GLB model loaded successfully.");
+      pot = gltf.scene;
+
+      // --- Position and Scale ---
+      // You will likely need to adjust these values to fit your scene.
+      pot.position.set(0, -2, 0);
+      pot.scale.set(0.005, 0.005, 0.005); // Example: Make it 50% larger
+
+      // --- Enable Shadows and Correct Materials ---
+      // Traverse the model to configure its parts.
+      pot.traverse((child) => {
+        if (child.isMesh) {
+          console.log("Found mesh in pot:", child.name);
+
+          // Enable shadows for the pot's mesh
+          child.castShadow = true;
+          child.receiveShadow = true;
+
+          // Optional: Log the material properties to confirm they are loaded correctly
+          if (child.material) {
+            console.log("Pot material:", child.material.name);
+            console.log("  - Type:", child.material.type); // Should be MeshPhysicalMaterial
+            console.log("  - Diffuse Map (Texture):", child.material.map); // Should be a Texture object
+          }
+        }
+      });
+
+      scene.add(pot);
+    },
+
+    // onProgress callback
+    (xhr) => {
+      console.log(`Pot model: ${(xhr.loaded / xhr.total) * 100}% loaded`);
+    },
+
+    // onError callback
+    (error) => {
+      console.error(
+        "An error happened while loading the pot GLB model:",
+        error
+      );
+      // Fallback to a default pot if loading fails
+      createDefaultPotAsFallback();
+    }
+  );
+}
+
+// Keep your fallback function just in case
+function createDefaultPotAsFallback() {
+  console.warn("Falling back to a default cylinder pot.");
   const geometry = new THREE.CylinderGeometry(0.5, 0.5, 0.5, 32);
-  const material = new THREE.MeshStandardMaterial({
-    color: 0x8b4513,
-    roughness: 0.8,
-    metalness: 0.1,
-  }); // Changed to Standard for PBR consistency
+  const material = new THREE.MeshStandardMaterial({ color: 0x8b4513 });
   pot = new THREE.Mesh(geometry, material);
   pot.position.set(0, -1, 0);
-  pot.castShadow = true;
-  pot.receiveShadow = true;
-
   scene.add(pot);
 }
 
