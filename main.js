@@ -31,6 +31,7 @@ function init() {
     0.1,
     1000
   );
+  camera.position.set(0, 0, 10); // Adjusted camera position for better view
   renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.shadowMap.enabled = true;
@@ -103,66 +104,15 @@ function createFlower() {
       // Debug materials and try to fix them
       flower.traverse((child) => {
         if (child.isMesh) {
-          console.log("=== MESH DEBUG ===");
-          console.log("Mesh name:", child.name);
-          console.log("Material:", child.material);
-          console.log("Geometry:", child.geometry);
+          const materials = Array.isArray(child.material)
+            ? child.material
+            : [child.material];
 
-          // Enable shadows
-          child.castShadow = true;
-          child.receiveShadow = true;
-
-          if (child.material) {
-            const materials = Array.isArray(child.material)
-              ? child.material
-              : [child.material];
-
-            materials.forEach((material, index) => {
-              console.log(`=== MATERIAL ${index} DEBUG ===`);
-              console.log("Type:", material.type);
-              console.log("Color:", material.color);
-              console.log("Map:", material.map);
-              console.log("Roughness:", material.roughness);
-              console.log("Metalness:", material.metalness);
-              console.log("Opacity:", material.opacity);
-              console.log("Transparent:", material.transparent);
-
-              // Force material properties for debugging
-              if (
-                material.type === "MeshStandardMaterial" ||
-                material.type === "MeshPhysicalMaterial"
-              ) {
-                // Try forcing a bright red color to see if it's a texture issue
-                // material.color.setHex(0xff0000); // Force bright red
-                material.roughness = 0.5;
-                material.metalness = 0.0;
-                material.needsUpdate = true;
-
-                if (material.map) {
-                  material.map.colorSpace = THREE.SRGBColorSpace;
-                  material.map.needsUpdate = true;
-                  console.log(
-                    "Texture dimensions:",
-                    material.map.image?.width,
-                    "x",
-                    material.map.image?.height
-                  );
-                } else {
-                  console.log("NO TEXTURE FOUND - this might be the issue!");
-                }
-              }
-
-              // If it's any other material type, convert it
-              if (material.type === "MeshBasicMaterial") {
-                console.log(
-                  "Found MeshBasicMaterial - this might be the issue"
-                );
-                // Basic materials don't respond to lights
-                material.color.setHex(0xff0000);
-                material.needsUpdate = true;
-              }
-            });
-          }
+          materials.forEach((material) => {
+            material.roughness = 0.5;
+            material.metalness = 0.0;
+            material.needsUpdate = true;
+          });
         }
       });
 
@@ -348,7 +298,6 @@ function createInvisibleFloor() {
   });
   const floor = new THREE.Mesh(geometry, material);
   floor.position.y = -2;
-  floor.rotation.x = -Math.PI / 2; // Rotate to be horizontal
   floor.name = "invisibleFloor";
   scene.add(floor);
 }
@@ -381,28 +330,67 @@ function onMouseMove(event) {
     const intersects = raycaster.intersectObject(floor);
     if (intersects.length > 0) {
       const newY = intersects[0].point.y;
-      flower.position.y = Math.max(newY + 1, -0.5);
+      flower.position.y = newY;
     }
   }
 }
 
-function onMouseUp() {
-  if (!flower || !flower.userData || !flower.userData.shouldMove) return;
+function handleCollisionAndSnap() {
+  // Ensure both flower and pot are loaded before proceeding
+  if (!flower || !pot) return;
 
-  flower.userData.shouldMove = false;
-
-  const SNAP_THRESHOLD = 0.75;
-  const potTopY = pot.position.y + 0.25;
-
+  // 1. Create bounding boxes for collision detection
   const flowerBox = new THREE.Box3().setFromObject(flower);
   const potBox = new THREE.Box3().setFromObject(pot);
 
+  // 2. (Optional) Create visual helpers to debug the bounding boxes
+  // These helpers draw a wireframe box around the objects.
+  // const flowerHelper = new THREE.Box3Helper(flowerBox, 0xff0000); // Red for flower
+  // scene.add(flowerHelper);
+
+  // const potHelper = new THREE.Box3Helper(potBox, 0x00ff00); // Green for pot
+  // scene.add(potHelper);
+
+  // 3. Check if the bounding boxes are intersecting
   if (flowerBox.intersectsBox(potBox)) {
-    flower.position.y = potTopY + 0.5;
+    // Log a success message to the console
+    console.log("Collision Detected! The flower has been placed in the pot.");
+
+    // 4. Snap the flower into position on top of the pot
+    const potTopY = pot.position.y + 0.25; // Top surface of the pot
     flower.position.x = pot.position.x;
     flower.position.z = pot.position.z;
+
+    // NOTE: The original value `potTopY - 3` would place the flower far below the pot.
+    // A value like `potTopY + 0.5` (adjust as needed) will place it correctly inside.
+    flower.position.y = potTopY + 0.5;
+
+    // 5. Display the popup message
     popup.style.display = "block";
+
+    // Optional: Disable further dragging after successful placement
+    flower.userData.isDraggable = false;
+  } else {
+    // Log a message if no collision occurred
+    console.log("No collision. The flower was not placed in the pot.");
+
+    // Optional: Remove the helpers if you only want to see them on a failed attempt
+    // setTimeout(() => {
+    //   scene.remove(flowerHelper);
+    //   scene.remove(potHelper);
+    // }, 2000); // Remove after 2 seconds
   }
+}
+function onMouseUp() {
+  // Exit if the flower isn't being dragged
+  if (!flower || !flower.userData || !flower.userData.shouldMove) return;
+
+  // Stop the dragging state
+  flower.userData.shouldMove = false;
+  console.log("Mouse released, checking for collision...");
+
+  // Call the dedicated function to handle collision logic
+  handleCollisionAndSnap();
 }
 
 function animate() {
