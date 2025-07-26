@@ -88,7 +88,7 @@ function createFlower() {
 
   // Load the GLB file directly - no need for separate textures
   loader.load(
-    "/models/model.glb", // Updated path to your GLB file
+    "/happy-birthday/models/model.glb", // Updated path to your GLB file
     (gltf) => {
       console.log("GLB model loaded successfully");
       console.log("Model structure:", gltf.scene);
