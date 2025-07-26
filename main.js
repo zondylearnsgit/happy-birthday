@@ -1,18 +1,10 @@
-`
-This code creates a simple 3D scene, where a single flower is generated on top of the screen middle of the width, and at the bottom a pot is created in the middle of the screen \
-the flower's user data is set to draggable, allowing it to move around the scene. An invisible plane is behind the flower, on which it can be dragged using the intersection point. only it's vertical position is updated which is dragged into the bpot.
-This flower and pot collision is recognised and then a pop up comes saying.. Wow you gave me a new life. Are you the one who loves noodles, biryani and chocolate cake? A guy passing by told me that he loves that person so much and that she will save me.
-Thanl you soo much for giving me a new life. He also left a message for you. 
-CLick on this onk to view it. This link opens a video player, in which my happy birthday message will play, mp4.
-
-As soon as the video ends, the pops closes, both video and message, then with the flowers, a cute hemisphere of flowers if formed
-and a nice animate happy birthday message is displayed on the screen.
-`;
-
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/Addons.js";
 
 let scene, camera, renderer, flower, pot, videoPlayer, popup;
+let heartGroup = new THREE.Group();
+heartGroup.rotation.x = (-3 * Math.PI) / 4; // Rotate to face upwards
+heartGroup.userData.rotate = false; // Flag to control rotation
 let clock = new THREE.Clock();
 let mixer, action;
 let isDragging = false;
@@ -21,9 +13,16 @@ let mouse = new THREE.Vector2();
 let videoTexture, videoMaterial;
 let video = document.createElement("video");
 
+// Step 1: Add an async function to handle heart flower animation
+
+let flowerInstances = [];
+let heartAnimationStarted = false;
+let HEART_FORMATION_DELAY = 20; // milliseconds delay between each rose
+let SHOW_BDAY_TEXT_DELAY = 2000; // total delay to show birthday message
+
 function init() {
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x87ceeb); // Sky blue background
+  scene.background = new THREE.Color(0x000000); // Sky blue background
 
   camera = new THREE.PerspectiveCamera(
     75,
@@ -65,7 +64,7 @@ function init() {
   const pointLight = new THREE.PointLight(0xffffff, 3.0, 50);
   pointLight.position.set(0, 3, 2);
   scene.add(pointLight);
-
+  createTitleMessage();
   document.body.appendChild(renderer.domElement);
 
   createFlower();
@@ -231,9 +230,16 @@ function createVideoPlayer() {
   closeButton.style.height = "30px";
   closeButton.style.cursor = "pointer";
   closeButton.style.zIndex = "1001";
-  closeButton.onclick = () => {
+  closeButton.onclick = async () => {
     container.style.display = "none";
-    createFlowerHemisphere();
+    const player = document.getElementById("youtubePlayer");
+    if (player && player.contentWindow) {
+      player.contentWindow.postMessage(
+        '{"event":"command","func":"stopVideo","args":""}',
+        "*"
+      );
+    }
+    await createHeartFlowerRing();
   };
 
   const iframe = document.createElement("iframe");
@@ -251,31 +257,71 @@ function createVideoPlayer() {
   videoPlayer = container;
 }
 
-function createFlowerHemisphere() {
-  if (!flower) {
-    console.warn("Original flower not loaded yet");
+async function createHeartFlowerRing() {
+  if (!flower || !flower.userData.boundingBox) {
+    console.warn("Original flower or bounding box not available");
     return;
   }
 
-  const radius = 2;
-  const flowerCount = 30; // Reduced count for better performance
+  const flowerCount = 50;
+  const scaleFactor = 4;
+
+  const heartPositions = [];
 
   for (let i = 0; i < flowerCount; i++) {
-    const phi = Math.acos(-1 + (2 * i) / flowerCount);
-    const theta = Math.sqrt(flowerCount * Math.PI) * phi;
-
-    const x = radius * Math.cos(theta) * Math.sin(phi);
-    const y = Math.abs(radius * Math.sin(theta) * Math.sin(phi)); // Keep positive Y for hemisphere
-    const z = radius * Math.cos(phi);
-
-    const miniFlower = flower.clone();
-    miniFlower.position.set(x, y, z);
-    miniFlower.scale.set(0.2, 0.2, 0.2); // Smaller flowers
-    miniFlower.lookAt(0, 0, 0);
-    scene.add(miniFlower);
+    const t = (i / flowerCount) * Math.PI * 2;
+    const x = scaleFactor * 16 * Math.pow(Math.sin(t), 3);
+    const z =
+      scaleFactor *
+      (13 * Math.cos(t) -
+        5 * Math.cos(2 * t) -
+        2 * Math.cos(3 * t) -
+        Math.cos(4 * t));
+    heartPositions.push(new THREE.Vector3(x * 0.05, 0, z * 0.05));
   }
 
-  createBirthdayMessage();
+  // Initially place all flowers at the bottom center of the screen
+  const yStart = -3;
+  for (let i = 0; i < flowerCount; i++) {
+    const miniFlower = flower.clone();
+    miniFlower.position.set(0, yStart, 0);
+    miniFlower.scale.set(0.2, 0.2, 0.2);
+    heartGroup.add(miniFlower);
+    flowerInstances.push(miniFlower);
+  }
+
+  scene.add(heartGroup);
+  scene.remove(flower);
+  scene.remove(pot);
+
+  // Now move flowers to the heart path one by one with delay
+  await animateHeartFormation(heartPositions);
+}
+
+async function animateHeartFormation(positions) {
+  if (heartAnimationStarted) return;
+  heartAnimationStarted = true;
+
+  for (let i = 0; i < positions.length; i++) {
+    const flower = flowerInstances[i];
+    if (!flower) continue;
+
+    const pos = positions[i];
+    flower.position.set(pos.x, pos.y, pos.z);
+
+    // Point outward from center of heart
+    const dir = new THREE.Vector3(pos.x, 0, pos.z).normalize();
+    const lookTarget = new THREE.Vector3().addVectors(pos, dir);
+    flower.lookAt(lookTarget);
+
+    await new Promise((res) => setTimeout(res, HEART_FORMATION_DELAY));
+  }
+
+  // Wait additional time for smooth rendering before showing message
+  setTimeout(() => {
+    createBirthdayMessage();
+    heartGroup.userData.rotate = true; // Allow rotation after message is shown
+  }, SHOW_BDAY_TEXT_DELAY);
 }
 
 function createBirthdayMessage() {
@@ -289,13 +335,23 @@ function createBirthdayMessage() {
   message.style.fontFamily = "Arial, sans-serif";
   message.style.textAlign = "center";
   message.style.zIndex = "999";
-  message.innerHTML = "Happy Birthday!<br>🎉🎂✨";
+  message.innerHTML = "Happy Birthday!<br>Bangaarammmmmmmmmmmm!!!!!";
   message.style.textShadow = "2px 2px 4px rgba(0,0,0,0.3)";
-  message.style.animation = "pulse 2s infinite";
 
-  // Add CSS animation
+  // --- CHANGES ARE HERE ---
+  // Set initial opacity to 0 for fade-in effect
+  message.style.opacity = "0";
+  // Add a smooth transition for the opacity property
+  message.style.transition = "opacity 2s ease-in-out";
+
+  // Remove the wobbling animation by commenting it out or deleting it
+  // message.style.animation = "pulse 2s infinite";
+
+  // Add CSS animation - we are keeping the style block in case you want other animations later,
+  // but the 'pulse' keyframes are no longer applied.
   const style = document.createElement("style");
   style.textContent = `
+    /* The pulse animation is no longer used, but we keep the style block */
     @keyframes pulse {
       0% { transform: translate(-50%, -50%) scale(1); }
       50% { transform: translate(-50%, -50%) scale(1.1); }
@@ -303,8 +359,58 @@ function createBirthdayMessage() {
     }
   `;
   document.head.appendChild(style);
-
   document.body.appendChild(message);
+
+  // After a short delay, change the opacity to 1 to trigger the fade-in
+  setTimeout(() => {
+    message.style.opacity = "1";
+  }, 100); // A small delay ensures the transition is applied correctly
+  // --- END OF CHANGES ---
+}
+
+function createTitleMessage() {
+  const message = document.createElement("div");
+  message.id = "titleMessage";
+  message.style.position = "fixed";
+  message.style.top = "50%";
+  message.style.left = "50%";
+  message.style.transform = "translate(-50%, -50%)";
+  message.style.color = "#FF1493";
+  message.style.fontSize = "48px";
+  message.style.fontFamily = "Arial, sans-serif";
+  message.style.textAlign = "center";
+  message.style.zIndex = "999";
+  message.innerHTML = "Save the Flower";
+  message.style.textShadow = "2px 2px 4px rgba(0,0,0,0.3)";
+
+  // --- CHANGES ARE HERE ---
+  // Set initial opacity to 0 for fade-in effect
+  message.style.opacity = "0";
+  // Add a smooth transition for the opacity property
+  message.style.transition = "opacity 2s ease-in-out";
+
+  // Remove the wobbling animation by commenting it out or deleting it
+  // message.style.animation = "pulse 2s infinite";
+
+  // Add CSS animation - we are keeping the style block in case you want other animations later,
+  // but the 'pulse' keyframes are no longer applied.
+  const style = document.createElement("style");
+  style.textContent = `
+    /* The pulse animation is no longer used, but we keep the style block */
+    @keyframes pulse {
+      0% { transform: translate(-50%, -50%) scale(1); }
+      50% { transform: translate(-50%, -50%) scale(1.1); }
+      100% { transform: translate(-50%, -50%) scale(1); }
+    }
+  `;
+  document.head.appendChild(style);
+  document.body.appendChild(message);
+
+  // After a short delay, change the opacity to 1 to trigger the fade-in
+  setTimeout(() => {
+    message.style.opacity = "1";
+  }, 100); // A small delay ensures the transition is applied correctly
+  // --- END OF CHANGES ---
 }
 
 function createPopup() {
@@ -336,6 +442,13 @@ function createPopup() {
   link.onclick = () => {
     videoPlayer.style.display = "block";
     popup.style.display = "none";
+    const player = document.getElementById("youtubePlayer");
+    if (player && player.contentWindow) {
+      player.contentWindow.postMessage(
+        '{"event":"command","func":"playVideo","args":""}',
+        "*"
+      );
+    }
     return false;
   };
 
@@ -358,6 +471,14 @@ function createInvisibleFloor() {
 
 function onMouseDown(event) {
   if (!flower || !flower.userData) return;
+  let title = document.getElementById("titleMessage");
+  if (title) {
+    title.style.display = "none"; // Hide the title message on flower click
+    title.style.opacity = "0"; // Start fade-out effect
+    setTimeout(() => {
+      title.style.display = "none"; // Ensure it's hidden after fade-out
+    }, 2000); // Match this duration to the CSS transition duration
+  }
 
   mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
   mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
@@ -452,6 +573,12 @@ function animate() {
 
   const delta = clock.getDelta();
   if (mixer) mixer.update(delta);
+  if (heartGroup && heartGroup.userData.rotate) {
+    setTimeout(() => {
+      heartGroup.rotation.z += 0.005; // Adjust the value to change rotation speed
+    }, 1500); // Delay to allow for smoother animation
+    // heartGroup.rotation.y += 0.005; // Adjust the value to change rotation speed
+  }
 
   renderer.render(scene, camera);
 }
