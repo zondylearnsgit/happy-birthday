@@ -4,7 +4,49 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Happy Birthday</title>
-    <script type="module" crossorigin src="/happy-birthday/assets/index-30xV2-Nt.js"></script>
+    <style>
+      html,
+      body {
+        /* Prevents pull-to-refresh on mobile */
+        overscroll-behavior-y: contain;
+        /* Prevents horizontal scrollbars from appearing */
+        overflow-x: hidden;
+        margin: 0;
+        padding: 0;
+      }
+
+      /* --- NEW CSS FOR RESPONSIVE VIDEO --- */
+
+      /* This is the main pop-up container. We set its responsive width here. */
+      #videoContainer {
+        width: 90vw; /* It will take up 90% of the viewport width */
+        max-width: 640px; /* On large screens, it won't get bigger than 640px */
+      }
+
+      /* This is a new wrapper we will add around the iframe to handle the aspect ratio */
+      .video-aspect-ratio-wrapper {
+        position: relative;
+        /* This padding percentage creates the 16:9 aspect ratio (9 / 16 = 0.5625) */
+        padding-bottom: 56.25%;
+        height: 0;
+        overflow: hidden;
+        border-radius: 8px; /* Optional: adds nice rounded corners */
+        background-color: #000; /* Shows a black background while video loads */
+      }
+
+      /* The iframe itself will fill the wrapper perfectly */
+      .video-aspect-ratio-wrapper iframe {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        border: 0; /* Removes the default iframe border */
+      }
+
+      /* --- END OF NEW CSS --- */
+    </style>
+    <script type="module" crossorigin src="/happy-birthday/assets/index-DHbtF3ni.js"></script>
   </head>
   <body>
     <script src="https://www.youtube.com/iframe_api"></script>
