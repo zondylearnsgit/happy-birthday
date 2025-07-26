@@ -2,27 +2,24 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/Addons.js";
 
 let scene, camera, renderer, flower, pot, videoPlayer, popup;
+// --- MODIFICATION --- Added a variable for our new reliable hitbox
+let flowerHitbox;
 let heartGroup = new THREE.Group();
-heartGroup.rotation.x = (-3 * Math.PI) / 4; // Rotate to face upwards
-heartGroup.userData.rotate = false; // Flag to control rotation
+heartGroup.rotation.x = (-3 * Math.PI) / 4;
+heartGroup.userData.rotate = false;
 let clock = new THREE.Clock();
 let mixer, action;
-let isDragging = false;
 let raycaster = new THREE.Raycaster();
 let mouse = new THREE.Vector2();
-let videoTexture, videoMaterial;
-let video = document.createElement("video");
-
-// Step 1: Add an async function to handle heart flower animation
 
 let flowerInstances = [];
 let heartAnimationStarted = false;
-let HEART_FORMATION_DELAY = 20; // milliseconds delay between each rose
-let SHOW_BDAY_TEXT_DELAY = 2000; // total delay to show birthday message
+let HEART_FORMATION_DELAY = 20;
+let SHOW_BDAY_TEXT_DELAY = 2000;
 
 function init() {
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x000000); // Sky blue background
+  scene.background = new THREE.Color(0x000000);
 
   camera = new THREE.PerspectiveCamera(
     75,
@@ -30,28 +27,25 @@ function init() {
     0.1,
     1000
   );
-  camera.position.set(0, 0, 10); // Adjusted camera position for better view
+  camera.position.set(0, 0, 10);
   renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-  // Essential settings for Physical materials (PBR)
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.0;
   renderer.physicallyCorrectLights = true;
 
-  // Try much brighter lighting to see if it's a lighting issue
-  const ambientLight = new THREE.AmbientLight(0xffffff, 1.5); // Very bright ambient
+  const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
   scene.add(ambientLight);
 
-  const directionalLight = new THREE.DirectionalLight(0xffffff, 3.0); // Very bright directional
-  directionalLight.position.set(0, 5, 5); // Closer position
-  directionalLight.castShadow = false; // Disable shadows for debugging
+  const directionalLight = new THREE.DirectionalLight(0xffffff, 3.0);
+  directionalLight.position.set(0, 5, 5);
+  directionalLight.castShadow = false;
   scene.add(directionalLight);
 
-  // Add multiple lights from different angles
   const light2 = new THREE.DirectionalLight(0xffffff, 2.0);
   light2.position.set(-5, 5, 0);
   scene.add(light2);
@@ -60,7 +54,6 @@ function init() {
   light3.position.set(5, -5, 0);
   scene.add(light3);
 
-  // Add a very bright point light near the flower
   const pointLight = new THREE.PointLight(0xffffff, 3.0, 50);
   pointLight.position.set(0, 3, 2);
   scene.add(pointLight);
@@ -75,10 +68,23 @@ function init() {
 
   camera.position.z = 5;
 
+  // --- MODIFICATION --- Add event listeners for both Mouse (desktop) and Touch (mobile)
+  const canvas = renderer.domElement;
+
+  // Desktop Events
+  canvas.addEventListener("mousedown", onMouseDown, false);
+  canvas.addEventListener("mousemove", onMouseMove, false);
+  canvas.addEventListener("mouseup", onMouseUp, false);
+  // Add a listener for when the mouse leaves the window, to prevent a stuck dragging state
+  canvas.addEventListener("mouseleave", onMouseUp, false);
+
+  // Mobile Events
+  canvas.addEventListener("touchstart", onTouchStart, false);
+  canvas.addEventListener("touchmove", onTouchMove, false);
+  canvas.addEventListener("touchend", onTouchEnd, false);
+  canvas.addEventListener("touchcancel", onTouchEnd, false);
+
   window.addEventListener("resize", onWindowResize, false);
-  window.addEventListener("mousedown", onMouseDown, false);
-  window.addEventListener("mousemove", onMouseMove, false);
-  window.addEventListener("mouseup", onMouseUp, false);
 
   animate();
 }
@@ -86,27 +92,20 @@ function init() {
 function createFlower() {
   const loader = new GLTFLoader();
 
-  // Load the GLB file directly - no need for separate textures
   loader.load(
-    "/happy-birthday/models/model.glb", // Updated path to your GLB file
+    "/happy-birthday/models/model.glb",
     (gltf) => {
       console.log("GLB model loaded successfully");
-      console.log("Model structure:", gltf.scene);
-
       flower = gltf.scene;
-      flower.scale.set(0.5, 0.5, 0.5); // Reduced scale
+      flower.scale.set(0.5, 0.5, 0.5);
       flower.position.set(0, 2, 0);
+      flower.userData = { shouldMove: false }; // Initialize userData
 
-      // Initialize the userData object properly
-      flower.userData = { shouldMove: false };
-
-      // Debug materials and try to fix them
       flower.traverse((child) => {
         if (child.isMesh) {
           const materials = Array.isArray(child.material)
             ? child.material
             : [child.material];
-
           materials.forEach((material) => {
             material.roughness = 0.5;
             material.metalness = 0.0;
@@ -114,32 +113,36 @@ function createFlower() {
           });
         }
       });
-
-      // Create a bounding box for collision detection
-      const box = new THREE.Box3().setFromObject(flower);
-      flower.userData.boundingBox = box;
-
       scene.add(flower);
       console.log("Rose model added to scene");
+
+      // --- MODIFICATION --- Create the invisible hitbox after the flower loads.
+      // We wait for the flower to load so we can get its exact size.
+      const box = new THREE.Box3().setFromObject(flower);
+      const size = box.getSize(new THREE.Vector3());
+      const center = box.getCenter(new THREE.Vector3());
+
+      // Create a simple box geometry that matches the flower's dimensions
+      const hitboxGeometry = new THREE.BoxGeometry(size.x, size.y, size.z);
+      // Make the material invisible. visible: false is more performant than opacity: 0.
+      // For debugging, you can use: new THREE.MeshBasicMaterial({ wireframe: true, color: 0x00ff00 })
+      const hitboxMaterial = new THREE.MeshBasicMaterial({ visible: false });
+
+      flowerHitbox = new THREE.Mesh(hitboxGeometry, hitboxMaterial);
+      // Position the hitbox to match the flower model's center
+      flowerHitbox.position.copy(center);
+      scene.add(flowerHitbox);
     },
     (xhr) => {
       console.log((xhr.loaded / xhr.total) * 100 + "% loaded");
     },
     (error) => {
       console.error("Error loading GLB:", error);
-      console.error(
-        "Make sure the file path '/models/red_rose.glb' is correct"
-      );
     }
   );
 }
 
-// Removed setupMaterial function as it's now handled inline
-
-/**
- * Loads the pot.glb model, which uses a Physical material, and adds it to the scene.
- * This function relies on the renderer and lighting being correctly set up for PBR.
- */
+// ... (createPot and other functions remain the same)
 function createPot() {
   const loader = new GLTFLoader();
 
@@ -216,7 +219,7 @@ function createVideoPlayer() {
   container.id = "videoContainer";
   container.style.zIndex = "1000";
 
-  // Create close button
+  // Create close button (no changes here)
   const closeButton = document.createElement("button");
   closeButton.innerHTML = "×";
   closeButton.style.position = "absolute";
@@ -242,29 +245,40 @@ function createVideoPlayer() {
     await createHeartFlowerRing();
   };
 
+  // --- MODIFICATIONS ARE HERE ---
+
+  // 1. Create the new wrapper for aspect ratio control
+  const aspectRatioWrapper = document.createElement("div");
+  aspectRatioWrapper.className = "video-aspect-ratio-wrapper";
+
+  // 2. Create the iframe WITHOUT fixed width and height
   const iframe = document.createElement("iframe");
   iframe.id = "youtubePlayer";
-  iframe.width = "640";
-  iframe.height = "360";
   iframe.src = "https://www.youtube.com/embed/0SnwZtj61S4?enablejsapi=1";
   iframe.allow =
     "accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture";
+  // The frameBorder="0" is handled by the CSS `border: 0;` but we can leave it
   iframe.frameBorder = "0";
 
+  // 3. Build the new structure
+  aspectRatioWrapper.appendChild(iframe); // Put iframe inside the new wrapper
   container.appendChild(closeButton);
-  container.appendChild(iframe);
+  container.appendChild(aspectRatioWrapper); // Put the wrapper inside the main container
+
+  // --- END OF MODIFICATIONS ---
+
   document.body.appendChild(container);
   videoPlayer = container;
 }
 
 async function createHeartFlowerRing() {
-  if (!flower || !flower.userData.boundingBox) {
-    console.warn("Original flower or bounding box not available");
+  if (!flower) {
+    console.warn("Original flower not available");
     return;
   }
 
   const flowerCount = 50;
-  const scaleFactor = 4;
+  const scaleFactor = 3;
 
   const heartPositions = [];
 
@@ -291,8 +305,10 @@ async function createHeartFlowerRing() {
   }
 
   scene.add(heartGroup);
-  scene.remove(flower);
-  scene.remove(pot);
+  // Also remove the hitbox when removing the flower
+  if (flower) scene.remove(flower);
+  if (flowerHitbox) scene.remove(flowerHitbox);
+  if (pot) scene.remove(pot);
 
   // Now move flowers to the heart path one by one with delay
   await animateHeartFormation(heartPositions);
@@ -331,41 +347,18 @@ function createBirthdayMessage() {
   message.style.left = "50%";
   message.style.transform = "translate(-50%, -50%)";
   message.style.color = "#FF1493";
-  message.style.fontSize = "48px";
+  message.style.fontSize = "36px";
   message.style.fontFamily = "Arial, sans-serif";
   message.style.textAlign = "center";
   message.style.zIndex = "999";
-  message.innerHTML = "Happy Birthday!<br>Bangaarammmmmmmmmmmm!!!!!";
+  message.innerHTML = "Happy Birthday!<br>Bangaarammmmmm!!!!!";
   message.style.textShadow = "2px 2px 4px rgba(0,0,0,0.3)";
-
-  // --- CHANGES ARE HERE ---
-  // Set initial opacity to 0 for fade-in effect
   message.style.opacity = "0";
-  // Add a smooth transition for the opacity property
   message.style.transition = "opacity 2s ease-in-out";
-
-  // Remove the wobbling animation by commenting it out or deleting it
-  // message.style.animation = "pulse 2s infinite";
-
-  // Add CSS animation - we are keeping the style block in case you want other animations later,
-  // but the 'pulse' keyframes are no longer applied.
-  const style = document.createElement("style");
-  style.textContent = `
-    /* The pulse animation is no longer used, but we keep the style block */
-    @keyframes pulse {
-      0% { transform: translate(-50%, -50%) scale(1); }
-      50% { transform: translate(-50%, -50%) scale(1.1); }
-      100% { transform: translate(-50%, -50%) scale(1); }
-    }
-  `;
-  document.head.appendChild(style);
   document.body.appendChild(message);
-
-  // After a short delay, change the opacity to 1 to trigger the fade-in
   setTimeout(() => {
     message.style.opacity = "1";
-  }, 100); // A small delay ensures the transition is applied correctly
-  // --- END OF CHANGES ---
+  }, 100);
 }
 
 function createTitleMessage() {
@@ -382,35 +375,12 @@ function createTitleMessage() {
   message.style.zIndex = "999";
   message.innerHTML = "Save the Flower";
   message.style.textShadow = "2px 2px 4px rgba(0,0,0,0.3)";
-
-  // --- CHANGES ARE HERE ---
-  // Set initial opacity to 0 for fade-in effect
   message.style.opacity = "0";
-  // Add a smooth transition for the opacity property
   message.style.transition = "opacity 2s ease-in-out";
-
-  // Remove the wobbling animation by commenting it out or deleting it
-  // message.style.animation = "pulse 2s infinite";
-
-  // Add CSS animation - we are keeping the style block in case you want other animations later,
-  // but the 'pulse' keyframes are no longer applied.
-  const style = document.createElement("style");
-  style.textContent = `
-    /* The pulse animation is no longer used, but we keep the style block */
-    @keyframes pulse {
-      0% { transform: translate(-50%, -50%) scale(1); }
-      50% { transform: translate(-50%, -50%) scale(1.1); }
-      100% { transform: translate(-50%, -50%) scale(1); }
-    }
-  `;
-  document.head.appendChild(style);
   document.body.appendChild(message);
-
-  // After a short delay, change the opacity to 1 to trigger the fade-in
   setTimeout(() => {
     message.style.opacity = "1";
-  }, 100); // A small delay ensures the transition is applied correctly
-  // --- END OF CHANGES ---
+  }, 100);
 }
 
 function createPopup() {
@@ -469,34 +439,42 @@ function createInvisibleFloor() {
   scene.add(floor);
 }
 
-function onMouseDown(event) {
-  if (!flower || !flower.userData) return;
-  let title = document.getElementById("titleMessage");
-  if (title) {
-    title.style.display = "none"; // Hide the title message on flower click
-    title.style.opacity = "0"; // Start fade-out effect
+// --- MODIFICATION --- Consolidated event handling logic
+function handleInteractionStart(clientX, clientY) {
+  if (!flower || !flower.userData || !flowerHitbox) return;
+
+  const title = document.getElementById("titleMessage");
+  if (title && title.style.display !== "none") {
+    title.style.opacity = "0";
     setTimeout(() => {
-      title.style.display = "none"; // Ensure it's hidden after fade-out
-    }, 2000); // Match this duration to the CSS transition duration
+      title.style.display = "none";
+    }, 2000);
   }
 
-  mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-  mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+  mouse.x = (clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(clientY / window.innerHeight) * 2 + 1;
 
   raycaster.setFromCamera(mouse, camera);
-  const intersects = raycaster.intersectObject(flower, true); // Recursive check
+  // --- MODIFICATION --- Intersect with the reliable hitbox, not the complex flower model
+  const intersects = raycaster.intersectObject(flowerHitbox);
 
   if (intersects.length > 0) {
-    console.log("Flower clicked");
+    console.log("Flower hitbox clicked");
     flower.userData.shouldMove = true;
   }
 }
 
-function onMouseMove(event) {
-  if (!flower || !flower.userData || !flower.userData.shouldMove) return;
+function handleInteractionMove(clientX, clientY) {
+  if (
+    !flower ||
+    !flower.userData ||
+    !flower.userData.shouldMove ||
+    !flowerHitbox
+  )
+    return;
 
-  mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-  mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+  mouse.x = (clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(clientY / window.innerHeight) * 2 + 1;
 
   raycaster.setFromCamera(mouse, camera);
   const floor = scene.getObjectByName("invisibleFloor");
@@ -506,66 +484,79 @@ function onMouseMove(event) {
     if (intersects.length > 0) {
       const newY = intersects[0].point.y;
       flower.position.y = newY;
+      // --- MODIFICATION --- Make sure the hitbox moves with the flower
+      flowerHitbox.position.y = newY;
     }
   }
 }
 
-function handleCollisionAndSnap() {
-  // Ensure both flower and pot are loaded before proceeding
-  if (!flower || !pot) return;
-
-  // 1. Create bounding boxes for collision detection
-  const flowerBox = new THREE.Box3().setFromObject(flower);
-  const potBox = new THREE.Box3().setFromObject(pot);
-
-  // 2. (Optional) Create visual helpers to debug the bounding boxes
-  // These helpers draw a wireframe box around the objects.
-  // const flowerHelper = new THREE.Box3Helper(flowerBox, 0xff0000); // Red for flower
-  // scene.add(flowerHelper);
-
-  // const potHelper = new THREE.Box3Helper(potBox, 0x00ff00); // Green for pot
-  // scene.add(potHelper);
-
-  // 3. Check if the bounding boxes are intersecting
-  if (flowerBox.intersectsBox(potBox)) {
-    // Log a success message to the console
-    console.log("Collision Detected! The flower has been placed in the pot.");
-
-    // 4. Snap the flower into position on top of the pot
-    const potTopY = pot.position.y + 0.25; // Top surface of the pot
-    flower.position.x = pot.position.x;
-    flower.position.z = pot.position.z;
-
-    // NOTE: The original value `potTopY - 3` would place the flower far below the pot.
-    // A value like `potTopY + 0.5` (adjust as needed) will place it correctly inside.
-    flower.position.y = potTopY + 0.5;
-
-    // 5. Display the popup message
-    popup.style.display = "block";
-
-    // Optional: Disable further dragging after successful placement
-    flower.userData.isDraggable = false;
-  } else {
-    // Log a message if no collision occurred
-    console.log("No collision. The flower was not placed in the pot.");
-
-    // Optional: Remove the helpers if you only want to see them on a failed attempt
-    // setTimeout(() => {
-    //   scene.remove(flowerHelper);
-    //   scene.remove(potHelper);
-    // }, 2000); // Remove after 2 seconds
-  }
-}
-function onMouseUp() {
-  // Exit if the flower isn't being dragged
+function handleInteractionEnd() {
   if (!flower || !flower.userData || !flower.userData.shouldMove) return;
 
-  // Stop the dragging state
   flower.userData.shouldMove = false;
-  console.log("Mouse released, checking for collision...");
-
-  // Call the dedicated function to handle collision logic
+  console.log("Interaction ended, checking for collision...");
   handleCollisionAndSnap();
+}
+
+// --- MODIFICATION --- Specific event listener functions for clarity
+function onMouseDown(event) {
+  handleInteractionStart(event.clientX, event.clientY);
+}
+
+function onMouseMove(event) {
+  handleInteractionMove(event.clientX, event.clientY);
+}
+
+function onMouseUp() {
+  handleInteractionEnd();
+}
+
+function onTouchStart(event) {
+  // Prevent the default touch action (like page zoom)
+  event.preventDefault();
+  const touch = event.touches[0];
+  handleInteractionStart(touch.clientX, touch.clientY);
+}
+
+function onTouchMove(event) {
+  // --- MODIFICATION --- This is the key to preventing "pull-to-refresh" on mobile
+  event.preventDefault();
+  const touch = event.touches[0];
+  handleInteractionMove(touch.clientX, touch.clientY);
+}
+
+function onTouchEnd() {
+  handleInteractionEnd();
+}
+
+function handleCollisionAndSnap() {
+  if (!flower || !pot || !flowerHitbox) return;
+
+  // We can use the hitbox for collision detection as well for consistency
+  const flowerBox = new THREE.Box3().setFromObject(flowerHitbox);
+  const potBox = new THREE.Box3().setFromObject(pot);
+
+  if (flowerBox.intersectsBox(potBox)) {
+    console.log("Collision Detected! The flower has been placed in the pot.");
+
+    const potTopY = pot.position.y + 0.25;
+    flower.position.x = pot.position.x;
+    flower.position.z = pot.position.z;
+    flower.position.y = potTopY + 0.5;
+
+    // --- MODIFICATION --- Also snap the hitbox to the final position
+    flowerHitbox.position.copy(flower.position);
+
+    popup.style.display = "block";
+
+    // Disable further interaction
+    flower.userData.shouldMove = false;
+    // To be absolutely sure, we can remove the hitbox
+    scene.remove(flowerHitbox);
+    flowerHitbox = null; // Clean up
+  } else {
+    console.log("No collision. The flower was not placed in the pot.");
+  }
 }
 
 function animate() {
@@ -575,9 +566,8 @@ function animate() {
   if (mixer) mixer.update(delta);
   if (heartGroup && heartGroup.userData.rotate) {
     setTimeout(() => {
-      heartGroup.rotation.z += 0.005; // Adjust the value to change rotation speed
-    }, 1500); // Delay to allow for smoother animation
-    // heartGroup.rotation.y += 0.005; // Adjust the value to change rotation speed
+      heartGroup.rotation.z += 0.005;
+    }, 1500);
   }
 
   renderer.render(scene, camera);
@@ -589,8 +579,6 @@ function onWindowResize() {
   renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
-// Initialize the scene
 init();
 
-// Export for other modules
 export { scene, camera, renderer, flower, pot, videoPlayer, popup };
