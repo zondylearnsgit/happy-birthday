@@ -27073,7 +27073,7 @@ function F_() {
   t.className = "video-aspect-ratio-wrapper";
   const n = document.createElement("iframe");
   (n.id = "youtubePlayer"),
-    (n.src = "https://www.youtube.com/embed/E4WlUXrJgy4?enablejsapi=1"),
+    (n.src = "https://www.youtube.com/embed/dQw4w9WgXcQ?enablejsapi=1"),
     (n.allow =
       "accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"),
     (n.frameBorder = "0"),
